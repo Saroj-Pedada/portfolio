@@ -26,14 +26,15 @@ export function RegionDetails({ region, headingLevel = 2 }: { region: Region; he
       {region.minigame === 'bb84' && <BB84 />}
       {region.media && (
         <div className="media-grid">
-          {region.media.map((m, i) =>
-            m.src ? (
+          {region.media.map((m, i) => {
+            const src = m.src && (/^https?:/.test(m.src) ? m.src : import.meta.env.BASE_URL + m.src)
+            return src ? (
               m.kind === 'image' ? (
-                <img key={i} src={m.src} alt={m.label} />
+                <img key={i} src={src} alt={m.label} />
               ) : m.kind === 'audio' ? (
-                <audio key={i} src={m.src} controls />
+                <audio key={i} src={src} controls />
               ) : (
-                <video key={i} src={m.src} controls />
+                <video key={i} src={src} controls />
               )
             ) : (
               <div key={i} className={`media-slot media-${m.kind}`}>
@@ -43,8 +44,8 @@ export function RegionDetails({ region, headingLevel = 2 }: { region: Region; he
                 <span>{m.label}</span>
                 <span className="media-soon">coming soon</span>
               </div>
-            ),
-          )}
+            )
+          })}
         </div>
       )}
       {region.links && (

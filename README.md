@@ -14,7 +14,7 @@ npm run build      # production build in dist/
 
 Everything lives in [`src/content/expedition.ts`](src/content/expedition.ts): regions, dates, bullets, links, skills ("Pictos") and media slots. Lines marked `TODO(saroj)` still need real details.
 
-To fill a media slot, drop the file into `public/media/` and set `src`, e.g. `{ kind: 'audio', label: 'Recording', src: '/media/song.mp3' }`. Slots without `src` show a "coming soon" frame.
+To fill a media slot, drop the file into `public/media/` and set `src`, e.g. `{ kind: 'audio', label: 'Recording', src: 'media/song.mp3' }`. Slots without `src` show a "coming soon" frame.
 
 ## Layout
 
@@ -26,3 +26,7 @@ To fill a media slot, drop the file into `public/media/` and set `src`, e.g. `{ 
 | `src/world/Rig.tsx` | input, travel, camera |
 | `src/world/Painterly.tsx` | Kuwahara oil-paint post effect |
 | `src/ui/` | HUD, journal, inventory, BB84 mini-game, classic page |
+
+## Deploying
+
+Every push to `main` builds and deploys to GitHub Pages via `.github/workflows/deploy.yml`, served at https://saroj-pedada.github.io/portfolio/. One-time setup: repo **Settings → Pages → Source: GitHub Actions**.

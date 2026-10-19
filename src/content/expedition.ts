@@ -4,7 +4,7 @@
 export type MediaSlot = {
   kind: 'image' | 'audio' | 'video'
   label: string
-  src?: string // leave undefined to show an empty "coming soon" frame
+  src?: string // path under public/, e.g. 'media/song.mp3'; leave undefined for a "coming soon" frame
 }
 
 export type Link = { label: string; href: string }
@@ -56,7 +56,7 @@ export const profile = {
     { label: 'GitHub', href: 'https://github.com/Saroj-Pedada' },
     { label: 'Instagram (art)', href: 'https://www.instagram.com/yosj.art/' },
   ] as Link[],
-  resume: '/SarojPedada_Resume.pdf',
+  resume: `${import.meta.env.BASE_URL}SarojPedada_Resume.pdf`,
 }
 
 export const acts: Act[] = [
