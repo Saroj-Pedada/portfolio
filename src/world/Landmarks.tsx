@@ -3,7 +3,7 @@ import { useFrame } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import * as THREE from 'three'
 import { regions, type LandmarkKind, type Region } from '../content/expedition'
-import { useStore } from '../store'
+import { maxReach, useStore } from '../store'
 import { anchors, heightAt, landmarkPosition } from './path'
 import { Toon } from './Toon'
 
@@ -26,13 +26,17 @@ function Stop({ region, index }: { region: Region; index: number }) {
   // landmarks face the road
   const yaw = Math.atan2(anchor.x - pos.x, anchor.z - pos.z)
   const Builder = builders[region.landmark]
-  // flag sits at the roadside, on the landmark's side
-  const flagPos = useMemo(() => {
+  // flag sits at the roadside, on the landmark's side; the boss waits a little further in
+  const { flagPos, bossPos } = useMemo(() => {
     const dir = new THREE.Vector3().subVectors(pos, anchor).setY(0).normalize()
-    const p = anchor.clone().addScaledVector(dir, 4.2)
-    p.y = heightAt(p.x, p.z)
-    return p
+    const f = anchor.clone().addScaledVector(dir, 4.2)
+    f.y = heightAt(f.x, f.z)
+    const b = anchor.clone().addScaledVector(dir, 7.5)
+    b.z -= 3
+    b.y = heightAt(b.x, b.z)
+    return { flagPos: f, bossPos: b }
   }, [pos, anchor])
+  const cleared = useStore((s) => s.cleared.has(index))
 
   return (
     <>
@@ -40,6 +44,7 @@ function Stop({ region, index }: { region: Region; index: number }) {
         <Builder accent={region.palette.accent} />
       </group>
       <Flag position={flagPos} region={region} index={index} />
+      {region.battle && !cleared && <BossMarker position={bossPos} color={region.battle.boss.color} index={index} />}
     </>
   )
 }
@@ -48,9 +53,12 @@ function Flag({ position, region, index }: { position: THREE.Vector3; region: Re
   const cloth = useRef<THREE.Group>(null)
   const regionIndex = useStore((s) => s.regionIndex)
   const atStop = useStore((s) => s.atStop)
-  const visited = useStore((s) => s.visited.has(index))
+  const cleared = useStore((s) => s.cleared.has(index))
+  const locked = useStore((s) => index > maxReach(s.cleared))
   const near = Math.abs(regionIndex - index) <= 1
   const here = regionIndex === index && atStop
+  const battle = !!region.battle
+  const clothColor = battle ? (cleared ? region.palette.accent : '#b0413e') : region.palette.accent
 
   useFrame(({ clock }) => {
     if (!cloth.current) return
@@ -73,7 +81,7 @@ function Flag({ position, region, index }: { position: THREE.Vector3; region: Re
       <group ref={cloth} position={[0, 3.7, 0]}>
         <mesh position={[0, 0, 0.8]}>
           <boxGeometry args={[0.04, 1, 1.6]} />
-          <Toon color={visited ? region.palette.accent : '#d8cfc0'} emissive={region.palette.accent} intensity={here ? 0.6 : 0.1} />
+          <Toon color={clothColor} emissive={clothColor} intensity={here ? 0.6 : 0.1} />
         </mesh>
       </group>
       <mesh position={[0, 4.5, 0]}>
@@ -85,10 +93,56 @@ function Flag({ position, region, index }: { position: THREE.Vector3; region: Re
           <button className={`flag-label ${here ? 'is-here' : ''}`} onClick={() => onClick({ stopPropagation() {} })}>
             <span className="flag-name">{region.name}</span>
             {region.dates && <span className="flag-dates">{region.dates}</span>}
+            {battle && (
+              <span className="flag-status">{locked ? '🔒 Locked' : cleared ? '✓ Cleared' : `⚔ ${region.battle!.boss.name}`}</span>
+            )}
             {here && <span className="flag-hint">Open journal · E</span>}
           </button>
         </Html>
       )}
+    </group>
+  )
+}
+
+// A dark, spiked creature guarding every place not yet won. It vanishes once its boss falls.
+function BossMarker({ position, color, index }: { position: THREE.Vector3; color: string; index: number }) {
+  const g = useRef<THREE.Group>(null)
+  useFrame(({ clock }) => {
+    if (!g.current) return
+    const t = clock.elapsedTime + index
+    g.current.position.y = position.y + 3.2 + Math.sin(t * 1.4) * 0.35
+    g.current.rotation.y = t * 0.6
+  })
+  const spikes = useMemo(
+    () =>
+      Array.from({ length: 10 }, (_, i) => {
+        const a = (i / 10) * Math.PI * 2
+        const up = i % 2 ? 0.5 : -0.3
+        return new THREE.Euler(up, a, Math.PI / 2)
+      }),
+    [],
+  )
+  return (
+    <group ref={g} position={[position.x, position.y + 3, position.z]} scale={1.1}>
+      <mesh castShadow>
+        <icosahedronGeometry args={[1.3, 0]} />
+        <Toon color="#1a1220" />
+      </mesh>
+      {spikes.map((r, i) => (
+        <group key={i} rotation={r}>
+          <mesh position={[0, 1.7, 0]} castShadow>
+            <coneGeometry args={[0.28, 1.3, 5]} />
+            <Toon color="#2a1a2e" />
+          </mesh>
+        </group>
+      ))}
+      {[-0.4, 0.4].map((x) => (
+        <mesh key={x} position={[x, 0.25, 1.12]}>
+          <sphereGeometry args={[0.18, 10, 8]} />
+          <Toon color={color} emissive={color} intensity={3} />
+        </mesh>
+      ))}
+      <pointLight color={color} intensity={8} distance={8} />
     </group>
   )
 }
@@ -162,6 +216,7 @@ function Camp({ accent }: BuilderProps) {
         </mesh>
       </group>
       <pointLight ref={light} position={[0, 2, 0]} color="#ff9a4a" distance={22} decay={2} />
+      <CampExtras />
       {[-2.4, 2.4].map((x) => (
         <mesh key={x} position={[x, 0.35, 1.5]} rotation={[0, x * 0.3, Math.PI / 2]} castShadow>
           <cylinderGeometry args={[0.35, 0.35, 1.8, 8]} />
@@ -172,89 +227,10 @@ function Camp({ accent }: BuilderProps) {
   )
 }
 
-function Outpost({ accent }: BuilderProps) {
-  return (
-    <group>
-      {[
-        [-1.5, -1.5],
-        [1.5, -1.5],
-        [-1.5, 1.5],
-        [1.5, 1.5],
-      ].map(([x, z], i) => (
-        <mesh key={i} position={[x, 3.5, z]} castShadow>
-          <boxGeometry args={[0.3, 7, 0.3]} />
-          <Toon color="#6b4a2e" />
-        </mesh>
-      ))}
-      <mesh position={[0, 7, 0]} castShadow>
-        <boxGeometry args={[4.2, 0.4, 4.2]} />
-        <Toon color="#8a6a3f" />
-      </mesh>
-      <mesh position={[0, 9, 0]} rotation={[0, Math.PI / 4, 0]} castShadow>
-        <coneGeometry args={[3.4, 2.4, 4]} />
-        <Toon color="#b0413e" />
-      </mesh>
-      <Bob amp={0.15} speed={2}>
-        <mesh position={[0, 7.9, 0]}>
-          <sphereGeometry args={[0.45, 12, 10]} />
-          <Toon color={accent} emissive="#ffcf7a" intensity={2.2} />
-        </mesh>
-      </Bob>
-      <pointLight position={[0, 8, 0]} color="#ffcf7a" intensity={20} distance={18} />
-      {/* a seedling: the AgriTech beginnings */}
-      <mesh position={[3.5, 0.6, 2]} castShadow>
-        <cylinderGeometry args={[0.08, 0.1, 1.2, 6]} />
-        <Toon color="#5f7f3a" />
-      </mesh>
-      {[-1, 1].map((s) => (
-        <mesh key={s} position={[3.5 + s * 0.35, 1.2, 2]} rotation={[0, 0, s * -0.7]} scale={[1, 0.4, 0.6]}>
-          <sphereGeometry args={[0.4, 10, 8]} />
-          <Toon color="#9acd5a" />
-        </mesh>
-      ))}
-    </group>
-  )
-}
-
 // ---------------------------------------------------------------------------------------------
 // Act I
 
-function Grove({ accent }: BuilderProps) {
-  const trees = useMemo(() => {
-    const r = seeded(7)
-    return Array.from({ length: 7 }, (_, i) => {
-      const a = (i / 7) * Math.PI * 2 + r()
-      const d = i === 0 ? 0 : 4 + r() * 3
-      return { x: Math.cos(a) * d, z: Math.sin(a) * d, s: i === 0 ? 1.8 : 0.8 + r() * 0.5 }
-    })
-  }, [])
-  return (
-    <group>
-      {trees.map((t, i) => (
-        <group key={i} position={[t.x, 0, t.z]} scale={t.s}>
-          <mesh position={[0, 1.8, 0]} castShadow>
-            <cylinderGeometry args={[0.25, 0.4, 3.6, 7]} />
-            <Toon color="#5a3e28" />
-          </mesh>
-          <mesh position={[0, 4.4, 0]} castShadow>
-            <icosahedronGeometry args={[2, 0]} />
-            <Toon color={i === 0 ? '#c3d86a' : '#7fa04a'} />
-          </mesh>
-          {[0, 1, 2].map((k) => (
-            <Bob key={k} amp={0.3} speed={1.4} phase={i + k * 2}>
-              <mesh position={[Math.cos(k * 2.1) * 2, 4 + k * 0.5, Math.sin(k * 2.1) * 2]}>
-                <sphereGeometry args={[0.3, 10, 8]} />
-                <Toon color={accent} emissive="#e6ff6a" intensity={2.5} />
-              </mesh>
-            </Bob>
-          ))}
-        </group>
-      ))}
-    </group>
-  )
-}
-
-function Spire({ accent }: BuilderProps) {
+function Archive({ accent }: BuilderProps) {
   const nodes = useMemo(() => {
     const r = seeded(11)
     return Array.from({ length: 24 }, (_, i) => {
@@ -288,6 +264,15 @@ function Spire({ accent }: BuilderProps) {
         <octahedronGeometry args={[1.1, 0]} />
         <Toon color={accent} emissive="#c99bff" intensity={3} />
       </mesh>
+      {/* the archive's books, drifting off the shelves */}
+      {Array.from({ length: 10 }, (_, i) => (
+        <Bob key={`b${i}`} amp={0.5} speed={0.9} phase={i * 0.7}>
+          <mesh position={[Math.cos(i * 0.63) * 7, 3 + (i % 5) * 3.2, Math.sin(i * 0.63) * 7]} rotation={[0.3, i, 0.4]} castShadow>
+            <boxGeometry args={[1.1, 1.5, 0.35]} />
+            <Toon color={['#8a3a3a', '#3a5a8a', '#c9a046', '#4a7a4a'][i % 4]} />
+          </mesh>
+        </Bob>
+      ))}
       <Spin speed={0.15}>
         {nodes.map((n, i) => (
           <mesh key={i} position={n}>
@@ -306,93 +291,6 @@ function Spire({ accent }: BuilderProps) {
 // ---------------------------------------------------------------------------------------------
 // Act II
 
-function Foundry({ accent }: BuilderProps) {
-  const smoke = useRef<THREE.Group>(null)
-  useFrame(({ clock }) => {
-    smoke.current?.children.forEach((c, i) => {
-      const t = (clock.elapsedTime * 0.35 + i / 6) % 1
-      c.position.y = 9 + t * 7
-      c.scale.setScalar(0.5 + t * 1.4)
-      ;((c as THREE.Mesh).material as THREE.MeshToonMaterial).opacity = 1 - t
-    })
-  })
-  return (
-    <group>
-      {[
-        [-4, 0, -1, 5, 4, 5],
-        [3, 0, -3, 4, 6, 4],
-        [0.5, 0, 3, 6, 3, 3],
-      ].map(([x, y, z, w, h, d], i) => (
-        <group key={i} position={[x, y, z]}>
-          <mesh position={[0, h / 2, 0]} castShadow>
-            <boxGeometry args={[w, h, d]} />
-            <Toon color={['#8a5a3a', '#a86a42', '#7a4a2e'][i]} />
-          </mesh>
-          <mesh position={[0, h + 0.8, 0]} rotation={[0, 0, Math.PI / 2]} castShadow>
-            <cylinderGeometry args={[1.6, 1.6, d + 0.2, 3, 1]} />
-            <Toon color="#4a2e22" />
-          </mesh>
-          <mesh position={[0, h * 0.45, d / 2 + 0.02]}>
-            <planeGeometry args={[w * 0.5, h * 0.35]} />
-            <Toon color={accent} emissive="#ff8a2a" intensity={1.6} />
-          </mesh>
-        </group>
-      ))}
-      <mesh position={[3, 7.5, -3]} castShadow>
-        <cylinderGeometry args={[0.5, 0.7, 4, 8]} />
-        <Toon color="#3a2a22" />
-      </mesh>
-      <group ref={smoke} position={[3, 0, -3]}>
-        {Array.from({ length: 6 }, (_, i) => (
-          <mesh key={i}>
-            <sphereGeometry args={[0.8, 10, 8]} />
-            <Toon color="#d8c8b8" transparent opacity={0.8} />
-          </mesh>
-        ))}
-      </group>
-      {/* the gear */}
-      <group position={[-6, 6, 2]} rotation={[0, Math.PI / 2, 0]}>
-        <Spin speed={0.6} axis="z">
-          <mesh>
-            <torusGeometry args={[2, 0.45, 8, 24]} />
-            <Toon color="#c08a3a" />
-          </mesh>
-          {Array.from({ length: 10 }, (_, i) => (
-            <mesh key={i} rotation={[0, 0, (i / 10) * Math.PI * 2]} position={[Math.cos((i / 10) * Math.PI * 2) * 2.6, Math.sin((i / 10) * Math.PI * 2) * 2.6, 0]}>
-              <boxGeometry args={[0.8, 0.6, 0.6]} />
-              <Toon color="#c08a3a" />
-            </mesh>
-          ))}
-        </Spin>
-      </group>
-      {/* floating desktop-app windows: the Electron apps */}
-      {[
-        [-2, 9, 4, 0.2],
-        [2.8, 11, 3, -0.25],
-      ].map(([x, y, z, r], i) => (
-        <Bob key={i} amp={0.35} speed={1.1} phase={i * 2}>
-          <group position={[x, y, z]} rotation={[0, r, 0]}>
-            <mesh>
-              <boxGeometry args={[3.6, 2.4, 0.12]} />
-              <Toon color="#2a2230" />
-            </mesh>
-            <mesh position={[0, -0.15, 0.07]}>
-              <planeGeometry args={[3.3, 1.8]} />
-              <Toon color={i ? '#9ffff0' : '#ffcf7a'} emissive={i ? '#4affd8' : '#ff9a4a'} intensity={1.2} />
-            </mesh>
-            {[0, 1, 2].map((k) => (
-              <mesh key={k} position={[-1.5 + k * 0.28, 1, 0.07]}>
-                <circleGeometry args={[0.08, 8]} />
-                <meshBasicMaterial color={['#ff5f57', '#febc2e', '#28c840'][k]} />
-              </mesh>
-            ))}
-          </group>
-        </Bob>
-      ))}
-    </group>
-  )
-}
-
 function Island({ r = 3, children }: { r?: number; children?: ReactNode }) {
   return (
     <group>
@@ -409,7 +307,7 @@ function Island({ r = 3, children }: { r?: number; children?: ReactNode }) {
   )
 }
 
-function Archipelago({ accent }: BuilderProps) {
+function Lattice({ accent }: BuilderProps) {
   const islands = useMemo(
     () => [
       new THREE.Vector3(0, 6, 0),
@@ -507,83 +405,6 @@ function LatticeGate({ accent }: BuilderProps) {
         <Toon color="#c9c0b0" />
       </mesh>
       <group scale={[0.75, 1, 1]}>{bars}</group>
-    </group>
-  )
-}
-
-function Cloud({ position, scale = 1 }: { position: [number, number, number]; scale?: number }) {
-  return (
-    <group position={position} scale={scale}>
-      {[
-        [0, 0, 0, 1.6],
-        [1.5, -0.3, 0.2, 1.2],
-        [-1.4, -0.2, 0.1, 1.1],
-        [0.5, 0.7, -0.3, 1.1],
-      ].map(([x, y, z, r], i) => (
-        <mesh key={i} position={[x, y, z]}>
-          <sphereGeometry args={[r, 14, 10]} />
-          <Toon color="#ffffff" />
-        </mesh>
-      ))}
-    </group>
-  )
-}
-
-function Harbor({ accent }: BuilderProps) {
-  return (
-    <group>
-      {/* dock on stilts */}
-      {[-3, 0, 3].map((x) =>
-        [-1, 1].map((z) => (
-          <mesh key={`${x}${z}`} position={[x, 2, z * 1.5]} castShadow>
-            <cylinderGeometry args={[0.15, 0.15, 4, 6]} />
-            <Toon color="#5a4a3a" />
-          </mesh>
-        )),
-      )}
-      <mesh position={[0, 4.1, 0]} castShadow receiveShadow>
-        <boxGeometry args={[8, 0.3, 3.6]} />
-        <Toon color="#8a6a4a" />
-      </mesh>
-      {/* airship */}
-      <Bob amp={0.6} speed={0.7}>
-        <group position={[0, 11, -2]}>
-          <mesh scale={[1, 1, 2.4]} castShadow>
-            <sphereGeometry args={[2, 20, 14]} />
-            <Toon color="#e0d4c0" />
-          </mesh>
-          {[-1.2, 0, 1.2].map((z) => (
-            <mesh key={z} position={[0, 0, z * 2]} rotation={[Math.PI / 2, 0, 0]}>
-              <torusGeometry args={[2.02, 0.06, 6, 24]} />
-              <Toon color="#b0413e" />
-            </mesh>
-          ))}
-          <mesh position={[0, -2.6, 0]} castShadow>
-            <boxGeometry args={[1.4, 0.8, 2.6]} />
-            <Toon color="#5a3e28" />
-          </mesh>
-          <mesh position={[0, 0, -5.2]} rotation={[0, 0, Math.PI / 4]}>
-            <boxGeometry args={[2.4, 0.1, 1]} />
-            <Toon color="#b0413e" />
-          </mesh>
-        </group>
-      </Bob>
-      {/* containers floating up into the cloud */}
-      {['#d0603a', '#3a7ad0', '#e0b04a', '#4aa070'].map((c, i) => (
-        <Bob key={c} amp={0.8} speed={0.5} phase={i * 1.5}>
-          <mesh position={[-5 + i * 3.2, 7 + i * 1.2, 3]} rotation={[0, i * 0.4, 0]} castShadow>
-            <boxGeometry args={[2, 1, 1]} />
-            <Toon color={c} />
-          </mesh>
-        </Bob>
-      ))}
-      <Cloud position={[-6, 14, -4]} scale={1.4} />
-      <Cloud position={[7, 12, -1]} />
-      <Cloud position={[2, 16, -8]} scale={1.8} />
-      <mesh position={[0, 15, 0]}>
-        <sphereGeometry args={[0.3, 8, 8]} />
-        <Toon color={accent} emissive="#ffffff" intensity={0.5} />
-      </mesh>
     </group>
   )
 }
@@ -814,202 +635,292 @@ const ART_PALETTES = [
   ['#e8c8a8', '#5f7f3a', '#c48a64', '#8a5a52'],
 ]
 
-function Atelier() {
+// ---------------------------------------------------------------------------------------------
+// Epilogue
+
+
+// ---------------------------------------------------------------------------------------------
+// Camp props: the Easel, the Fireside Guitar and the Signal Post
+
+function CampExtras() {
   return (
     <group>
       {/* easel */}
-      <group position={[0, 0, 2]}>
-        {[-0.8, 0.8].map((x) => (
-          <mesh key={x} position={[x, 2, 0]} rotation={[0.1, 0, x * -0.12]} castShadow>
-            <boxGeometry args={[0.15, 4.2, 0.15]} />
+      <group position={[-6.5, 0, 3]} rotation={[0, 0.6, 0]}>
+        {[-0.6, 0.6].map((x) => (
+          <mesh key={x} position={[x, 1.6, 0]} rotation={[0.1, 0, x * -0.12]} castShadow>
+            <boxGeometry args={[0.12, 3.4, 0.12]} />
             <Toon color="#6b4a2e" />
           </mesh>
         ))}
-        <mesh position={[0, 1.9, -0.5]} rotation={[-0.35, 0, 0]} castShadow>
-          <boxGeometry args={[0.15, 4, 0.15]} />
-          <Toon color="#6b4a2e" />
-        </mesh>
-        <Canvas3D seed={3} colors={ART_PALETTES[0]} position={[0, 2.8, 0.25]} rotation={0} />
+        <group scale={0.6}>
+          <Canvas3D seed={3} colors={ART_PALETTES[0]} position={[0, 4, 0.25]} rotation={0} />
+        </group>
       </group>
-      {/* floating gallery: empty frames ready for real artwork */}
-      {[
-        [-6, 6, -2, 0.5],
-        [0, 9, -4, 0],
-        [6, 6.5, -2, -0.5],
-      ].map(([x, y, z, r], i) => (
-        <Bob key={i} amp={0.4} speed={0.7} phase={i * 1.7}>
-          <Canvas3D seed={20 + i} colors={ART_PALETTES[i % 3]} position={[x, y, z]} rotation={r} />
-        </Bob>
-      ))}
-      {/* paint pots */}
-      {['#b0413e', '#e0b04a', '#3a7ad0', '#5f7f3a'].map((c, i) => (
-        <mesh key={c} position={[-2.5 + i * 0.7, 0.35, 3.5]} castShadow>
-          <cylinderGeometry args={[0.3, 0.3, 0.7, 10]} />
-          <Toon color={c} />
-        </mesh>
-      ))}
-    </group>
-  )
-}
-
-function Amphitheater({ accent }: BuilderProps) {
-  const notes = useRef<THREE.Group>(null)
-  useFrame(({ clock }) => {
-    notes.current?.children.forEach((n, i) => {
-      const t = (clock.elapsedTime * 0.25 + i / 7) % 1
-      n.position.set(Math.sin(t * 6 + i) * 3, 3 + t * 12, -2 + Math.cos(i) * 2)
-      n.scale.setScalar(Math.sin(t * Math.PI))
-    })
-  })
-  return (
-    <group>
-      {[0, 1, 2, 3].map((i) => (
-        <mesh key={i} position={[0, i * 0.6 + 0.3, 0]} rotation={[0, Math.PI, 0]} receiveShadow castShadow>
-          <cylinderGeometry args={[10 - i * 1.6, 10 - i * 1.6, 0.6, 24, 1, false, -Math.PI / 2, Math.PI]} />
-          <Toon color={i % 2 ? '#a86a5a' : '#c08a6a'} />
-        </mesh>
-      ))}
-      {/* giant guitar sculpture */}
-      <group position={[0, 2.6, -4]} rotation={[0, 0, 0.18]}>
-        <mesh position={[0, 2, 0]} scale={[1, 1, 0.35]} castShadow>
-          <sphereGeometry args={[2.4, 24, 16]} />
+      {/* guitar leaning on a log */}
+      <group position={[3.2, 0.9, 2.6]} rotation={[0, -0.5, 0.35]}>
+        <mesh position={[0, 0, 0]} scale={[1, 1, 0.35]} castShadow>
+          <sphereGeometry args={[0.55, 16, 12]} />
           <Toon color="#c0703a" />
         </mesh>
-        <mesh position={[0, 5, 0]} scale={[1, 1, 0.35]} castShadow>
-          <sphereGeometry args={[1.8, 24, 16]} />
+        <mesh position={[0, 0.65, 0]} scale={[1, 1, 0.35]} castShadow>
+          <sphereGeometry args={[0.42, 16, 12]} />
           <Toon color="#c0703a" />
         </mesh>
-        <mesh position={[0, 3.6, 0.86]}>
-          <circleGeometry args={[0.7, 20]} />
-          <meshBasicMaterial color="#1a0f0a" />
-        </mesh>
-        <mesh position={[0, 9.5, 0.2]} castShadow>
-          <boxGeometry args={[0.6, 6, 0.3]} />
+        <mesh position={[0, 1.6, 0.05]} castShadow>
+          <boxGeometry args={[0.14, 1.5, 0.08]} />
           <Toon color="#4a2e1e" />
         </mesh>
-        <mesh position={[0, 13, 0.2]} castShadow>
-          <boxGeometry args={[1, 1.4, 0.3]} />
-          <Toon color="#2a1a12" />
+        <mesh position={[0, 0.35, 0.2]}>
+          <circleGeometry args={[0.16, 14]} />
+          <meshBasicMaterial color="#1a0f0a" />
         </mesh>
-        {Array.from({ length: 6 }, (_, i) => (
-          <mesh key={i} position={[-0.25 + i * 0.1, 7.5, 0.9]}>
-            <boxGeometry args={[0.02, 11, 0.02]} />
-            <meshBasicMaterial color="#f2e6d0" />
+      </group>
+      {/* signpost */}
+      <group position={[6.5, 0, 2]}>
+        <mesh position={[0, 1.6, 0]} castShadow>
+          <cylinderGeometry args={[0.1, 0.12, 3.2, 6]} />
+          <Toon color="#5a3e28" />
+        </mesh>
+        {[0.4, -0.3].map((r, i) => (
+          <mesh key={i} position={[0, 2.6 - i * 0.6, 0]} rotation={[0, r, 0]} castShadow>
+            <boxGeometry args={[1.8, 0.4, 0.08]} />
+            <Toon color="#c9a46e" />
           </mesh>
         ))}
       </group>
-      <group ref={notes}>
-        {Array.from({ length: 7 }, (_, i) => (
-          <group key={i}>
-            <mesh>
-              <sphereGeometry args={[0.3, 10, 8]} />
-              <Toon color={accent} emissive="#ffb07a" intensity={2} />
-            </mesh>
-            <mesh position={[0.26, 0.6, 0]}>
-              <boxGeometry args={[0.06, 1.2, 0.06]} />
-              <Toon color={accent} emissive="#ffb07a" intensity={2} />
-            </mesh>
-          </group>
-        ))}
-      </group>
-    </group>
-  )
-}
-
-function Arcade({ accent }: BuilderProps) {
-  return (
-    <group>
-      {[-3.5, 0, 3.5].map((x, i) => (
-        <group key={x} position={[x, 0, -1 + Math.abs(x) * 0.3]} rotation={[0, -x * 0.12, 0]}>
-          <mesh position={[0, 2, 0]} castShadow>
-            <boxGeometry args={[2.2, 4, 1.8]} />
-            <Toon color={['#3a2a6a', '#5a2a5a', '#2a3a6a'][i]} />
-          </mesh>
-          <mesh position={[0, 2.7, 0.91]}>
-            <planeGeometry args={[1.7, 1.3]} />
-            <Toon color={['#5aff9a', '#ff5ad8', '#5ad8ff'][i]} emissive={['#2aff6a', '#ff2ad0', '#2ad0ff'][i]} intensity={1.6} />
-          </mesh>
-          <mesh position={[0, 4.25, 0.5]}>
-            <boxGeometry args={[2.2, 0.5, 0.9]} />
-            <Toon color={accent} emissive={accent} intensity={1.2} />
-          </mesh>
-          <mesh position={[0, 1.6, 1.1]} rotation={[-0.5, 0, 0]}>
-            <boxGeometry args={[2, 0.15, 0.7]} />
-            <Toon color="#1a1428" />
-          </mesh>
-        </group>
-      ))}
-      <mesh position={[0, 0, -3]}>
-        <torusGeometry args={[7, 0.25, 8, 32, Math.PI]} />
-        <Toon color={accent} emissive={accent} intensity={2} />
-      </mesh>
-      {/* a zombie from Zombie Hunter, wandering */}
-      <Bob amp={0.15} speed={3}>
-        <group position={[6, 0, 3]} rotation={[0, -0.8, 0]}>
-          <mesh position={[0, 1.4, 0]} castShadow>
-            <capsuleGeometry args={[0.45, 1.2, 4, 8]} />
-            <Toon color="#5a7a4a" />
-          </mesh>
-          <mesh position={[0, 2.6, 0]} castShadow>
-            <sphereGeometry args={[0.4, 10, 8]} />
-            <Toon color="#7a9a5a" />
-          </mesh>
-          {[-0.35, 0.35].map((x) => (
-            <mesh key={x} position={[x, 2, 0.5]} rotation={[Math.PI / 2, 0, 0]} castShadow>
-              <capsuleGeometry args={[0.12, 0.8, 4, 6]} />
-              <Toon color="#5a7a4a" />
-            </mesh>
-          ))}
-        </group>
-      </Bob>
     </group>
   )
 }
 
 // ---------------------------------------------------------------------------------------------
-// Epilogue
+// Prologue: the tutorial
 
-function Monolith({ accent }: BuilderProps) {
+function Proving({ accent }: BuilderProps) {
   return (
-    <group position={[0, 0, -10]}>
-      {[0, 1, 2].map((i) => (
-        <mesh key={i} position={[0, i * 0.6 + 0.3, 0]} receiveShadow castShadow>
-          <boxGeometry args={[14 - i * 3, 0.6, 14 - i * 3]} />
-          <Toon color="#3a3440" />
+    <group>
+      {/* university arch */}
+      {[-4, 4].map((x) => (
+        <mesh key={x} position={[x, 4, -3]} castShadow>
+          <boxGeometry args={[1.4, 8, 1.4]} />
+          <Toon color="#b8a080" />
         </mesh>
       ))}
-      <mesh position={[0, 24, 0]} castShadow>
-        <boxGeometry args={[5, 46, 2.2]} />
-        <Toon color="#1e1a24" />
+      <mesh position={[0, 8.6, -3]} castShadow>
+        <boxGeometry args={[10, 1.2, 1.6]} />
+        <Toon color="#b8a080" />
       </mesh>
-      <mesh position={[0, 24, 1.12]}>
-        <planeGeometry args={[0.25, 40]} />
-        <Toon color={accent} emissive="#ffb347" intensity={3} />
+      <mesh position={[0, 8.6, -2.15]}>
+        <planeGeometry args={[4, 0.6]} />
+        <Toon color={accent} emissive={accent} intensity={0.8} />
       </mesh>
-      <Spin speed={0.25}>
-        <mesh position={[0, 30, 0]} rotation={[Math.PI / 2.3, 0, 0]}>
-          <torusGeometry args={[7, 0.15, 6, 48]} />
-          <Toon color={accent} emissive="#ffd27a" intensity={2.5} />
+      {/* sparring circle and training dummies */}
+      <mesh position={[0, 0.06, 2]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <ringGeometry args={[4.4, 5, 32]} />
+        <Toon color="#e0c890" />
+      </mesh>
+      {[-2.4, 0, 2.4].map((x, i) => (
+        <group key={x} position={[x, 0, 2 + (i === 1 ? -1.2 : 0.6)]}>
+          <mesh position={[0, 1, 0]} castShadow>
+            <cylinderGeometry args={[0.12, 0.12, 2, 6]} />
+            <Toon color="#6b4a2e" />
+          </mesh>
+          <mesh position={[0, 1.6, 0]} castShadow>
+            <capsuleGeometry args={[0.45, 0.8, 4, 8]} />
+            <Toon color="#d8c090" />
+          </mesh>
+          <mesh position={[0, 2.5, 0]} castShadow>
+            <sphereGeometry args={[0.35, 10, 8]} />
+            <Toon color="#d8c090" />
+          </mesh>
+          <mesh position={[0, 1.8, 0]} rotation={[0, 0, Math.PI / 2]} castShadow>
+            <cylinderGeometry args={[0.08, 0.08, 1.8, 6]} />
+            <Toon color="#6b4a2e" />
+          </mesh>
+        </group>
+      ))}
+      {/* a stack of textbooks */}
+      {[0, 1, 2, 3].map((i) => (
+        <mesh key={i} position={[5.5, 0.2 + i * 0.32, 3]} rotation={[0, i * 0.3, 0]} castShadow>
+          <boxGeometry args={[1.4, 0.3, 1]} />
+          <Toon color={['#8a3a3a', '#3a5a8a', '#4a7a4a', '#c9a046'][i]} />
         </mesh>
-      </Spin>
-      <pointLight position={[0, 6, 6]} color="#ffd27a" intensity={60} distance={30} />
+      ))}
+    </group>
+  )
+}
+
+// ---------------------------------------------------------------------------------------------
+// Act I
+
+function Millet({ accent }: BuilderProps) {
+  const stalks = useMemo(() => {
+    const r = seeded(5)
+    return Array.from({ length: 90 }, () => ({ x: (r() - 0.5) * 16, z: (r() - 0.5) * 10 + 1, h: 1.4 + r() * 1.2, lean: (r() - 0.5) * 0.3, p: r() * 6 }))
+  }, [])
+  const field = useRef<THREE.Group>(null)
+  useFrame(({ clock }) => {
+    field.current?.children.forEach((c, i) => {
+      c.rotation.z = stalks[i].lean + Math.sin(clock.elapsedTime * 1.6 + stalks[i].p) * 0.08
+    })
+  })
+  return (
+    <group>
+      <group ref={field}>
+        {stalks.map((s, i) => (
+          <group key={i} position={[s.x, 0, s.z]}>
+            <mesh position={[0, s.h / 2, 0]}>
+              <cylinderGeometry args={[0.03, 0.04, s.h, 4]} />
+              <Toon color="#9a9a4a" />
+            </mesh>
+            <mesh position={[0, s.h + 0.25, 0]}>
+              <capsuleGeometry args={[0.1, 0.4, 2, 6]} />
+              <Toon color="#d8b860" />
+            </mesh>
+          </group>
+        ))}
+      </group>
+      {/* the Hollow Oracle's shrine: a statue with an empty, glowing eye */}
+      <group position={[0, 0, -6]}>
+        <mesh position={[0, 1, 0]} castShadow>
+          <cylinderGeometry args={[1.6, 2, 2, 8]} />
+          <Toon color="#b8a888" />
+        </mesh>
+        <mesh position={[0, 4.4, 0]} castShadow>
+          <capsuleGeometry args={[1.1, 3, 4, 10]} />
+          <Toon color="#d0c4a8" />
+        </mesh>
+        <mesh position={[0, 6.6, 0]} castShadow>
+          <sphereGeometry args={[1.1, 16, 12]} />
+          <Toon color="#d0c4a8" />
+        </mesh>
+        <mesh position={[0, 6.7, 1.02]}>
+          <circleGeometry args={[0.45, 16]} />
+          <Toon color={accent} emissive="#fff0a0" intensity={2.5} />
+        </mesh>
+      </group>
+      {/* a little learning hut: the LMS */}
+      <mesh position={[6.5, 1.2, -2]} castShadow>
+        <boxGeometry args={[2.6, 2.4, 2.4]} />
+        <Toon color="#a07a4a" />
+      </mesh>
+      <mesh position={[6.5, 3, -2]} rotation={[0, Math.PI / 4, 0]} castShadow>
+        <coneGeometry args={[2.2, 1.6, 4]} />
+        <Toon color="#7a5a3a" />
+      </mesh>
+    </group>
+  )
+}
+
+// ---------------------------------------------------------------------------------------------
+// Act II
+
+function Watchtower({ accent }: BuilderProps) {
+  const beam = useRef<THREE.Group>(null)
+  useFrame((_, dt) => {
+    if (beam.current) beam.current.rotation.y += dt * 0.7
+  })
+  return (
+    <group>
+      <mesh position={[0, 7, 0]} castShadow>
+        <cylinderGeometry args={[1.6, 2.4, 14, 8]} />
+        <Toon color="#8a7a6a" />
+      </mesh>
+      <mesh position={[0, 14.6, 0]} castShadow>
+        <cylinderGeometry args={[2.8, 2.8, 1.2, 8]} />
+        <Toon color="#6a5a4a" />
+      </mesh>
+      <mesh position={[0, 16.6, 0]} castShadow>
+        <coneGeometry args={[3, 2.8, 8]} />
+        <Toon color="#b0413e" />
+      </mesh>
+      <mesh position={[0, 15.4, 0]}>
+        <sphereGeometry args={[0.8, 12, 10]} />
+        <Toon color={accent} emissive="#ffcf7a" intensity={3} />
+      </mesh>
+      {/* the scanning beam sweeping websites, networks and code */}
+      <group ref={beam} position={[0, 15.4, 0]}>
+        <mesh position={[0, -2, 9]} rotation={[Math.PI / 2 + 0.25, 0, 0]}>
+          <coneGeometry args={[2.4, 18, 16, 1, true]} />
+          <meshBasicMaterial color="#fff0c0" transparent opacity={0.18} depthWrite={false} side={THREE.DoubleSide} />
+        </mesh>
+      </group>
+      {/* three things it watches */}
+      {[
+        [-6, '#c8a070'],
+        [0, '#a88060'],
+        [6, '#d0b080'],
+      ].map(([x, c], i) => (
+        <mesh key={i} position={[x as number, 0.8, 5]} rotation={[0, i, 0]} castShadow>
+          {i === 0 ? <boxGeometry args={[1.6, 1.6, 1.6]} /> : i === 1 ? <torusGeometry args={[0.8, 0.25, 6, 12]} /> : <octahedronGeometry args={[1, 0]} />}
+          <Toon color={c as string} />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
+// ---------------------------------------------------------------------------------------------
+// Act III finale
+
+function Mirror({ accent }: BuilderProps) {
+  const tail = useRef<THREE.Group>(null)
+  const nodes = useMemo(
+    () => Array.from({ length: 6 }, (_, i) => new THREE.Vector3(Math.cos(i * 1.05) * 7, 1.2 + (i % 2), Math.sin(i * 1.05) * 5 - 2)),
+    [],
+  )
+  const links = useMemo(() => {
+    const pts: number[] = []
+    nodes.forEach((n, i) => {
+      const m = nodes[(i + 1) % nodes.length]
+      pts.push(n.x, n.y, n.z, m.x, m.y, m.z)
+    })
+    return new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
+  }, [nodes])
+  useFrame(({ clock }) => {
+    if (tail.current) tail.current.position.y = -1.5 + Math.sin(clock.elapsedTime * 0.8) * 1.2
+  })
+  return (
+    <group>
+      {/* the still, reflective sea */}
+      <mesh position={[0, 0.3, -2]} rotation={[-Math.PI / 2, 0, 0]}>
+        <circleGeometry args={[11, 40]} />
+        <meshStandardMaterial color="#9ac8e8" metalness={0.9} roughness={0.08} />
+      </mesh>
+      {/* simulated network nodes floating on it */}
+      {nodes.map((n, i) => (
+        <Bob key={i} amp={0.25} speed={1} phase={i}>
+          <mesh position={n}>
+            <sphereGeometry args={[0.45, 12, 10]} />
+            <Toon color={accent} emissive="#bfe8ff" intensity={2} />
+          </mesh>
+        </Bob>
+      ))}
+      <lineSegments geometry={links}>
+        <lineBasicMaterial color="#e8f6ff" transparent opacity={0.7} />
+      </lineSegments>
+      {/* the Leviathan's coils breaking the surface */}
+      <group ref={tail} position={[0, -1.5, -7]}>
+        {[-4, 0, 4].map((x, i) => (
+          <mesh key={x} position={[x, 0, 0]} rotation={[0, Math.PI / 2, 0]} castShadow>
+            <torusGeometry args={[1.6 - i * 0.2, 0.55, 8, 16, Math.PI]} />
+            <Toon color="#24344a" />
+          </mesh>
+        ))}
+      </group>
     </group>
   )
 }
 
 const builders: Record<LandmarkKind, (p: BuilderProps) => ReactNode> = {
   camp: Camp,
-  outpost: Outpost,
-  grove: Grove,
-  spire: Spire,
-  foundry: Foundry,
-  archipelago: Archipelago,
-  harbor: Harbor,
+  proving: Proving,
+  millet: Millet,
+  archive: Archive,
+  lattice: Lattice,
   caverns: Caverns,
+  watchtower: Watchtower,
   peaks: Peaks,
   wellspring: Wellspring,
-  atelier: Atelier,
-  amphitheater: Amphitheater,
-  arcade: Arcade,
-  monolith: Monolith,
+  mirror: Mirror,
 }

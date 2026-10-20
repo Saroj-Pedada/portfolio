@@ -40,7 +40,7 @@ export default function App() {
       {mode === 'intro' && (
         <div className="intro">
           <div className="intro-card">
-            <p className="intro-kicker">A portfolio in four acts</p>
+            <p className="intro-kicker">Expedition24 · a portfolio you fight through</p>
             <h1>{profile.name}</h1>
             <p className="intro-sub">{profile.title}</p>
             <button className="primary big" onClick={() => setMode('world')}>
@@ -50,8 +50,8 @@ export default function App() {
               In a hurry? Classic view
             </button>
             <p className="intro-controls">
-              <kbd>W</kbd>/<kbd>↑</kbd>/scroll to ride · <kbd>E</kbd> open journal · <kbd>Tab</kbd> skills · or tap the
-              timeline
+              <kbd>W</kbd>/<kbd>↑</kbd>/scroll to ride · <kbd>E</kbd> read the journal · <kbd>Space</kbd> parry in battle ·
+              win each place to open the road
             </p>
           </div>
         </div>

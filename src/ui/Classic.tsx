@@ -22,7 +22,7 @@ export function Classic({ webgl }: { webgl: boolean }) {
       </header>
       {acts.map((a) => {
         const rs = regions.filter((r) => r.act === a.number)
-        if (!rs.length || a.number === 5) return null
+        if (!rs.length) return null
         return (
           <section key={a.number} className="classic-act">
             <h2 className="classic-act-title">
@@ -31,6 +31,12 @@ export function Classic({ webgl }: { webgl: boolean }) {
             {rs.map((r) => (
               <article key={r.id} className="classic-card" style={{ '--accent': r.palette.accent } as React.CSSProperties}>
                 <RegionDetails region={r} headingLevel={3} />
+                {r.battle && (
+                  <p className="battle-why">
+                    <b>In the game:</b> fights {r.battle.fights.map((f) => f.name).join(', ')}; boss {r.battle.boss.name}.{' '}
+                    {r.battle.why}
+                  </p>
+                )}
               </article>
             ))}
           </section>

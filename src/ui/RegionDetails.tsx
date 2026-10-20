@@ -1,4 +1,4 @@
-import type { Region } from '../content/expedition'
+import type { Link, MediaSlot, Region } from '../content/expedition'
 import { BB84 } from './BB84'
 
 // Shared between the in-world journal and the classic page.
@@ -24,9 +24,48 @@ export function RegionDetails({ region, headingLevel = 2 }: { region: Region; he
         ))}
       </ul>
       {region.minigame === 'bb84' && <BB84 />}
-      {region.media && (
+      {region.sections?.map((sec) => (
+        <section key={sec.title} className="region-section">
+          <h3>{sec.title}</h3>
+          <ul className="region-bullets">
+            {sec.bullets.map((b) => (
+              <li key={b}>{b}</li>
+            ))}
+          </ul>
+          {sec.media && <Media media={sec.media} />}
+          {sec.links && <Links links={sec.links} />}
+        </section>
+      ))}
+      {region.links && <Links links={region.links} />}
+      {region.skills.length > 0 && (
+        <div className="pictos">
+          {region.skills.map((s) => (
+            <span key={s} className="picto">
+              {s}
+            </span>
+          ))}
+        </div>
+      )}
+    </>
+  )
+}
+
+function Links({ links }: { links: Link[] }) {
+  return (
+    <div className="region-links">
+      {links.map((l) => (
+        <a key={l.href} href={l.href} target="_blank" rel="noreferrer">
+          {l.label} ↗
+        </a>
+      ))}
+    </div>
+  )
+}
+
+function Media({ media }: { media: MediaSlot[] }) {
+  return (
         <div className="media-grid">
-          {region.media.map((m, i) => {
+          {media.map((m, i) => {
             const src = m.src && (/^https?:/.test(m.src) ? m.src : import.meta.env.BASE_URL + m.src)
             return src ? (
               m.kind === 'image' ? (
@@ -47,25 +86,5 @@ export function RegionDetails({ region, headingLevel = 2 }: { region: Region; he
             )
           })}
         </div>
-      )}
-      {region.links && (
-        <div className="region-links">
-          {region.links.map((l) => (
-            <a key={l.href} href={l.href} target="_blank" rel="noreferrer">
-              {l.label} ↗
-            </a>
-          ))}
-        </div>
-      )}
-      {region.skills.length > 0 && (
-        <div className="pictos">
-          {region.skills.map((s) => (
-            <span key={s} className="picto">
-              {s}
-            </span>
-          ))}
-        </div>
-      )}
-    </>
   )
 }

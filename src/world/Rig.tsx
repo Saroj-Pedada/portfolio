@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { useStore } from '../store'
+import { maxReach, useStore } from '../store'
 import { N, heightAt, landmarkPosition, pointAt, tangentAt } from './path'
 import { travel } from './travel'
 
@@ -25,7 +25,8 @@ export function Rig() {
   useFrame((state, rawDt) => {
     const dt = Math.min(rawDt, 0.05)
     const store = useStore.getState()
-    const paused = store.journalOpen || store.inventoryOpen || store.mode !== 'world'
+    const paused = store.journalOpen || store.inventoryOpen || store.battleOpen || store.mode !== 'world'
+    const limit = maxReach(store.cleared)
 
     // --- motion ---
     let target = travel.velocity
@@ -50,7 +51,9 @@ export function Rig() {
     }
     if (paused && store.travelTarget === null) target = 0
     travel.velocity = THREE.MathUtils.lerp(travel.velocity, target, 1 - Math.exp(-dt * 5))
-    travel.p = THREE.MathUtils.clamp(travel.p + travel.velocity * dt, 0, N - 1)
+    // the road past an unbeaten place is closed
+    travel.p = THREE.MathUtils.clamp(travel.p + travel.velocity * dt, 0, Math.min(N - 1, limit))
+    if (travel.p >= limit && travel.velocity > 0) travel.velocity = 0
 
     const nearest = Math.round(travel.p)
     store.setPosition(nearest, Math.abs(nearest - travel.p) < STOP_RADIUS)
@@ -94,7 +97,7 @@ function useInput() {
       if (e.target instanceof HTMLInputElement) return
       const k = e.key.length === 1 ? e.key.toLowerCase() : e.key
       const s = useStore.getState()
-      if (s.mode !== 'world') return
+      if (s.mode !== 'world' || s.battleOpen) return
       if (k === 'e' || k === 'Enter') {
         if (s.atStop && !s.inventoryOpen) s.setJournal(!s.journalOpen)
         return
@@ -120,7 +123,7 @@ function useInput() {
     }
     const wheel = (e: WheelEvent) => {
       const s = useStore.getState()
-      if (s.mode !== 'world' || s.journalOpen || s.inventoryOpen) return
+      if (s.mode !== 'world' || s.journalOpen || s.inventoryOpen || s.battleOpen) return
       if ((e.target as HTMLElement)?.closest?.('[data-scrollable]')) return
       travel.wheel = THREE.MathUtils.clamp(travel.wheel + e.deltaY * 0.004, -1.6, 1.6)
     }

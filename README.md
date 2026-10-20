@@ -1,6 +1,6 @@
-# Saroj Pedada · The Expedition
+# Saroj Pedada · Expedition24
 
-A portfolio you ride through. Each phase of my career is a region on a painted road, travelled on the back of a big, soft companion creature. Work comes first, in chronological order (Acts I–III), then hobbies (Act IV).
+A portfolio you ride through. Each phase of my career is a region on a painted road, travelled on the back of a big, soft companion creature. The Camp is the safe place (school, art, guitar, side quests, contact). Every other place is a battle: read its journal, beat its fights and its boss in a short turn-based battle, and the road to the next phase opens. Places and bosses follow the *Expedition24 - Journey Timeline* doc.
 
 ```
 npm install
@@ -12,7 +12,7 @@ npm run build      # production build in dist/
 
 ## Editing content
 
-Everything lives in [`src/content/expedition.ts`](src/content/expedition.ts): regions, dates, bullets, links, skills ("Pictos") and media slots. Lines marked `TODO(saroj)` still need real details.
+Everything lives in [`src/content/expedition.ts`](src/content/expedition.ts): regions, dates, bullets, links, skills ("Pictos"), media slots, and each place's `battle` (moves, fights, boss, attacks, and the reasoning shown after a win). Lines marked `TODO(saroj)` still need real details.
 
 To fill a media slot, drop the file into `public/media/` and set `src`, e.g. `{ kind: 'audio', label: 'Recording', src: 'media/song.mp3' }`. Slots without `src` show a "coming soon" frame.
 
@@ -25,6 +25,7 @@ To fill a media slot, drop the file into `public/media/` and set `src`, e.g. `{ 
 | `src/world/Creature.tsx` | the companion and rider |
 | `src/world/Rig.tsx` | input, travel, camera |
 | `src/world/Painterly.tsx` | Kuwahara oil-paint post effect |
+| `src/ui/Battle.tsx` | turn-based battles: AP skills, timed parries (Space / tap), weak spots, boss gimmicks |
 | `src/ui/` | HUD, journal, inventory, BB84 mini-game, classic page |
 
 ## Deploying
